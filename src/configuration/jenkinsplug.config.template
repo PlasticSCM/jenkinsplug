@@ -1,0 +1,20 @@
+﻿[
+   {
+      "name":"url",
+      "displayName":"Jenkins URL",
+      "type":"string",
+      "description":"The base URL of your Jenkins server."
+   },
+   {
+      "name":"user",
+      "displayName":"User",
+      "type":"string",
+      "description":"User name to connect to Jenkins."
+   },
+   {
+      "name":"password",
+      "displayName":"Password",
+      "type":"password",
+      "description":"Password to connect to Jenkins."
+   }
+]
