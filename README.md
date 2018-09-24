@@ -27,7 +27,7 @@ You'll notice some configuration files under `/src/configuration`. Here's what t
 
 ## Add to Plastic SCM Server DevOps
 To allow Plastic SCM Server DevOps to discover your custom Jenkins plug, just drop 
-the `ci-jenkinsplug.definition.conf` file in `${DEVOPS_DIR}/config/plugs/available$`.
+the `ci-jenkinsplug.definition.conf` file in `${DEVOPS_DIR}/config/plugs/available`.
 Make sure the `command` and `template` keys contain the appropriate values for
 your deployment!
 
