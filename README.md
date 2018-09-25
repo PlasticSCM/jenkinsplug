@@ -39,7 +39,7 @@ They use the plug to launch builds in a Jenkins server and retrieve the build st
 When a mergebot requires a CI plug to work, you can select a Jenkins Plug Configuration.
 
 <p align="center">
-  <img alt="CI plug select" src="https://raw.githubusercontent.com/mig42/jenkinsplug/master/doc/img/ci-plug-select.png" />
+  <img alt="CI plug select" src="https://raw.githubusercontent.com/PlasticSCM/jenkinsplug/master/doc/img/ci-plug-select.png" />
 </p>
 
 You can either select an existing configuration or create a new one.
@@ -48,7 +48,7 @@ When you create a new Jenkins Plug Configuration, you have to fill in the follow
 
 <p align="center">
   <img alt="Jenkinsplug configuration example"
-       src="https://raw.githubusercontent.com/mig42/jenkinsplug/master/doc/img/configuration-example.png" />
+       src="https://raw.githubusercontent.com/PlasticSCM/jenkinsplug/master/doc/img/configuration-example.png" />
 </p>
 
 ## Installation requirements - The Jenkins Lightweight Plugin
@@ -71,7 +71,7 @@ Just select **Mergebot Plastic SCM** in the Source Code Management section. The
 
 <p align="center">
   <img alt="Plan repository"
-       src="https://raw.githubusercontent.com/mig42/jenkinsplug/master/doc/img/project-configuration.png" />
+       src="https://raw.githubusercontent.com/PlasticSCM/jenkinsplug/master/doc/img/project-configuration.png" />
 </p>
 
 When the **mergebot** requests a new build run or an existing build status
