@@ -15,7 +15,7 @@ in *Windows* or `/var/lib/plasticscm/devops` in *macOS* or *Linux*.
 
 # Setup
 If you just want to use the built-in Jenkins plug you don't need to do any of this.
-The Jenkins plug is available as a built-in mergebot in the DevOps section of the WebAdmin.
+The Jenkins plug is available as a built-in plug in the DevOps section of the WebAdmin.
 Open it up and configure your own!
 
 ## Configuration files
