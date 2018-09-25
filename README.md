@@ -14,7 +14,7 @@ solution file. You can use Visual Studio or MSBuild to compile it.
 in *Windows* or `/var/lib/plasticscm/devops` in *macOS* or *Linux*.
 
 # Setup
-If you just want to use the built-in trunk Jenkins plug you don't need to do any of this.
+If you just want to use the built-in Jenkins plug you don't need to do any of this.
 The Jenkins plug is available as a built-in mergebot in the DevOps section of the WebAdmin.
 Open it up and configure your own!
 
