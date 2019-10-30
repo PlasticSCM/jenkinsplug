@@ -54,6 +54,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BaseJobUriTests.cs" />
     <Compile Include="JenkinsProjectDescriptorTests.cs" />
     <Compile Include="QueueMapStorageTests.cs" />
   </ItemGroup>

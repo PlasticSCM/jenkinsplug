@@ -46,6 +46,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BaseJobUri.cs" />
     <Compile Include="BuildProperty.cs" />
     <Compile Include="BuildStatus.cs" />
     <Compile Include="Config.cs" />

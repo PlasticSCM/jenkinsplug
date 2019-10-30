@@ -83,7 +83,6 @@ namespace JenkinsPlug
             LogGetStatusMessage(message);
 
             BuildStatus status = await JenkinsBuild.QueryStatusAsync(
-                message.PlanName,
                 message.ExecutionId,
                 jenkinsIdMapper,
                 jenkinsHttpClient);

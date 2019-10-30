@@ -8,18 +8,25 @@ namespace JenkinsPlug
     {
         internal static void Log(Exception ex)
         {
+            string messageToLog = GetMessageToLog(ex);
+
+            mLog.Error(messageToLog);
+
+            mLog.Debug(ex.StackTrace);
+        }
+
+        internal static string GetMessageToLog(Exception ex)
+        {
             string exceptionErrorMsg = GetErrorMessage(ex);
             string innerExceptionErrorMsg = GetErrorMessage(ex == null ? null : ex.InnerException);
 
             bool bHasInnerEx = !string.IsNullOrEmpty(innerExceptionErrorMsg);
 
-            mLog.ErrorFormat("{0}{1}{2}{3}",
+            return string.Format("{0}{1}{2}{3}",
                 exceptionErrorMsg,
                 bHasInnerEx ? " - [" : string.Empty,
                 innerExceptionErrorMsg,
                 bHasInnerEx ? "]" : string.Empty);
-
-            mLog.Debug(ex.StackTrace);
         }
 
         static string GetErrorMessage(Exception ex)

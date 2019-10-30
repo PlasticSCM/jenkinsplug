@@ -1,9 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Xml;
+using log4net;
 
 namespace JenkinsPlug
 {
@@ -15,31 +17,12 @@ namespace JenkinsPlug
             internal string Value;
         }
 
-        internal static Crumb GetCrumb(HttpClient httpClient)
-        {
-            string endPoint = string.Format(GET_CRUMB_URI);
-
-            string response = GetStringResponseAsync(endPoint, httpClient).Result;
-
-            if (string.IsNullOrEmpty(response))
-                return null;
-
-            Crumb crumb = new Crumb();
-
-            crumb.FieldName = XmlNodeLoader.LoadValue(
-                response, "/defaultCrumbIssuer/crumbRequestField");
-            crumb.Value = XmlNodeLoader.LoadValue(
-                response, "/defaultCrumbIssuer/crumb");
-
-            return crumb;
-        }
-
         internal static bool CheckConnection(HttpClient httpClient)
         {
             HttpResponseMessage response = null;
             try
-            {
-                response = httpClient.GetAsync(GET_QUEUE_URI).Result;
+            {                
+                response = HttpGetOnJenkinsAsync(httpClient, GET_QUEUE_URI).Result;
             }
             catch (Exception ex)
             {
@@ -51,7 +34,7 @@ namespace JenkinsPlug
         }
 
         internal static async Task<string> QueueBuildAsync(
-            string projectName,
+            string projectPath,
             string plasticUpdateToSpec,
             string buildComment,
             Dictionary<string, string> botRequestProperties,
@@ -60,17 +43,18 @@ namespace JenkinsPlug
             XmlDocument projectDescriptor = null;
             bool bXmlVersionChanged = false;
 
-            string projectDescriptorContents = await GetProjectDescriptorAsync(projectName, httpClient);
+            string projectDescriptorContents =
+                await GetProjectDescriptorAsync(projectPath, httpClient);
 
             projectDescriptorContents = ProjectXmlVersionFix.EnsureV1_0(
                 projectDescriptorContents, out bXmlVersionChanged);
 
             projectDescriptor = ProjectDescriptor.Parse(projectDescriptorContents);
 
-            List<BuildProperty> requestProperties = QueueBuildRequestProps.Create(plasticUpdateToSpec, botRequestProperties);
-            string projectAuthToken = string.Empty;
+            List<BuildProperty> requestProperties =
+                QueueBuildRequestProps.Create(plasticUpdateToSpec, botRequestProperties);
 
-            projectAuthToken = ProjectDescriptor.GetAuthToken(projectDescriptor);
+            string projectAuthToken = ProjectDescriptor.GetAuthToken(projectDescriptor);
 
             List<string> pendingParametersToConfigure =
                 ProjectDescriptor.GetMissingParameters(projectDescriptor, requestProperties);
@@ -78,7 +62,7 @@ namespace JenkinsPlug
             if (pendingParametersToConfigure.Count > 0)
                 await ModifyJenkinsProjectAsync(
                     httpClient,
-                    projectName,
+                    projectPath,
                     projectDescriptor,
                     pendingParametersToConfigure,
                     bXmlVersionChanged);
@@ -92,23 +76,22 @@ namespace JenkinsPlug
             string endPoint = Uri.EscapeUriString(
                 string.Format(
                     QUEUE_BUILD_URI_FORMAT,
-                    projectName,
+                    BaseJobUri.Get(projectPath),
                     BuildPropertiesUri(requestProperties)));
 
-            HttpResponseMessage response = await httpClient.PostAsync(endPoint, null);
+            HttpResponseMessage response = await HttpPostOnJenkinsAsync(httpClient, endPoint, null);
 
             if (!response.IsSuccessStatusCode)
                 return string.Empty;
 
             if (response.Headers.Location != null)
-                return ParseBuildNumberFromLocationPathHeader(
+                return GetBuildNumberFromLocationPathHeader(
                     response.Headers.Location.AbsolutePath);
 
             return string.Empty;
         }
 
         internal static async Task<BuildStatus> QueryStatusAsync(
-            string projectName,
             string queuedItemId,
             JenkinsQueueToBuildMapper jenkinsIdMapper,
             HttpClient httpClient)
@@ -127,7 +110,7 @@ namespace JenkinsPlug
                 buildIdUrl,
                 buildIdUrl.EndsWith("/") ? string.Empty : "/");
 
-            HttpResponseMessage response = await httpClient.GetAsync(buildIdEndpoint);
+            HttpResponseMessage response = await HttpGetOnJenkinsAsync(httpClient, buildIdEndpoint);
 
             if (!response.IsSuccessStatusCode)
                 return null;
@@ -142,16 +125,18 @@ namespace JenkinsPlug
         }
 
         internal static async Task<string> GetProjectDescriptorAsync(
-            string projectName,
+            string projectNameOrPath,
             HttpClient httpClient)
         {
-            string endPoint = string.Format(GET_JOB_CONFIG_URI, projectName);
+            string endPoint = string.Format(
+                GET_JOB_CONFIG_URI_FORMAT, BaseJobUri.Get(projectNameOrPath));
+
             return await GetStringResponseAsync(endPoint, httpClient);
         }
 
         static async Task<string> GetStringResponseAsync(string endPoint, HttpClient httpClient)
         {
-            HttpResponseMessage response = await httpClient.GetAsync(endPoint);
+            HttpResponseMessage response = await HttpGetOnJenkinsAsync(httpClient, endPoint);
 
             if (!response.IsSuccessStatusCode)
                 return string.Empty;
@@ -161,7 +146,7 @@ namespace JenkinsPlug
 
         static async Task ModifyJenkinsProjectAsync(
             HttpClient httpClient,
-            string projectName,
+            string projectNameOrPath,
             XmlDocument projectDescriptor,
             List<string> pendingParametersToConfigure,
             bool bXmlVersionChanged)
@@ -184,8 +169,10 @@ namespace JenkinsPlug
                     System.Text.Encoding.UTF8,
                     "application/xml");
 
-                string endPoint = string.Format(GET_JOB_CONFIG_URI, projectName);
-                HttpResponseMessage response = await httpClient.PostAsync(endPoint, payLoad);
+                string endPoint = string.Format(
+                    GET_JOB_CONFIG_URI_FORMAT, BaseJobUri.Get(projectNameOrPath));
+
+                HttpResponseMessage response = await HttpPostOnJenkinsAsync(httpClient, endPoint, payLoad);
 
                 if (response.IsSuccessStatusCode)
                     return;
@@ -193,7 +180,7 @@ namespace JenkinsPlug
                 throw new InvalidOperationException(string.Format(
                     "Unable to update config.xml file for project [{0}] " +
                     "in order to setup required build parameters: {1}",
-                    projectName, response.ReasonPhrase));
+                    projectNameOrPath, response.ReasonPhrase));
             }
             finally
             {
@@ -218,13 +205,20 @@ namespace JenkinsPlug
             return sb.ToString();
         }
 
-        static string ParseBuildNumberFromLocationPathHeader(string absolutePath)
+        static string GetBuildNumberFromLocationPathHeader(string absolutePath)
         {
-            return absolutePath.
-                Replace("queue", string.Empty).
-                Replace("item", string.Empty).
-                Replace("/", string.Empty).
-                Trim();
+            mLog.DebugFormat(
+                "Get Build Number of queued job - " +
+                "Absolute path returned from Jenkins Server: {0}", absolutePath);
+
+            //absolutepath is sth like "/.../queue/item/675/"
+            string[] parts = absolutePath.Trim().Split(
+                new char[] { '/' }, StringSplitOptions.RemoveEmptyEntries);
+
+            if (parts == null || parts.Length == 0)
+                return string.Empty;
+
+            return parts[parts.Length - 1];
         }
 
         static string ParseBuildingTag(string buildingTagValue)
@@ -242,6 +236,122 @@ namespace JenkinsPlug
             return UNDEFINED_BUILD_TAG;
         }
 
+        static async Task<HttpResponseMessage> HttpGetOnJenkinsAsync(HttpClient httpClient, string endpoint)
+        {
+            UpdateCrumb(httpClient);
+            return await GetWithRetriesAsync(httpClient, endpoint);
+        }
+
+        static async Task<HttpResponseMessage> GetWithRetriesAsync(HttpClient httpClient, string buildIdEndpoint)
+        {
+            int retries = 0;
+            mLog.DebugFormat("http Get: [{0}]", buildIdEndpoint);
+            while (true)
+            {
+                try
+                {
+                    return await httpClient.GetAsync(buildIdEndpoint);
+                }
+                catch (WebException e)
+                {
+                    mLog.WarnFormat(
+                        "Error in GetAsync on endpoint [{0}] after {1} retries (max retries: {2}). Error:{3}",
+                        buildIdEndpoint,
+                        retries,
+                        MAX_GET_ASYNC_RETRIES_MONO_ISSUE_HACK,
+                        ExceptionLogger.GetMessageToLog(e));
+
+                    ++retries;
+
+                    if (retries > MAX_GET_ASYNC_RETRIES_MONO_ISSUE_HACK)
+                        throw;
+
+                    Task.Delay(retries * WAIT_MILLIS_GET_ASYNC_MONO_ISSUE_HACK).Wait();
+                    continue;
+                }
+            }
+        }
+
+        static async Task<HttpResponseMessage> HttpPostOnJenkinsAsync(HttpClient httpClient, string endpoint, HttpContent content)
+        {
+            UpdateCrumb(httpClient);
+            return await PostWithRetriesAsync(httpClient, endpoint, content);
+        }
+
+        static async Task<HttpResponseMessage> PostWithRetriesAsync(HttpClient httpClient, string endpoint, HttpContent content)
+        {
+            int retries = 0;
+            mLog.DebugFormat("http Post: [{0}]", endpoint);
+            while (true)
+            {
+                try
+                {
+                    return await httpClient.PostAsync(endpoint, content);
+                }
+                catch (WebException e)
+                {
+                    mLog.WarnFormat(
+                        "Error in PostAsync on endpoint [{0}] after {1} retries (max retries: {2}). Error:{3}",
+                        endpoint,
+                        retries,
+                        MAX_GET_ASYNC_RETRIES_MONO_ISSUE_HACK,
+                        ExceptionLogger.GetMessageToLog(e));
+
+                    ++retries;
+
+                    if (retries > MAX_GET_ASYNC_RETRIES_MONO_ISSUE_HACK)
+                        throw;
+
+                    Task.Delay(retries * WAIT_MILLIS_GET_ASYNC_MONO_ISSUE_HACK).Wait();
+                    continue;
+                }
+            }
+        }
+
+        static void UpdateCrumb(HttpClient httpClient)
+        {
+            JenkinsBuild.Crumb crumb = JenkinsBuild.GetCrumb(httpClient).Result;
+
+            if (crumb == null)
+            {
+                mLog.WarnFormat("Unable to update crumb. Maybe CSRF settings are not set in your jenkins server.");
+                return;
+            }
+
+            if (httpClient.DefaultRequestHeaders.Contains(crumb.FieldName))
+            {
+                mLog.DebugFormat("removing crumb header [{0}]", crumb.FieldName);
+                httpClient.DefaultRequestHeaders.Remove(crumb.FieldName);
+            }
+
+            mLog.DebugFormat("Upgrading crumb for http client: [{0} - {1}]", crumb.FieldName, crumb.Value);
+            httpClient.DefaultRequestHeaders.Add(crumb.FieldName, crumb.Value);
+        }
+
+        static async Task<Crumb> GetCrumb(HttpClient httpClient)
+        {
+            string endPoint = string.Format(GET_CRUMB_URI);
+
+            HttpResponseMessage response = await GetWithRetriesAsync(httpClient, endPoint);
+
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            string responseContents = await response.Content.ReadAsStringAsync();
+
+            if (string.IsNullOrEmpty(responseContents))
+                return null;
+
+            Crumb crumb = new Crumb();
+
+            crumb.FieldName = XmlNodeLoader.LoadValue(
+                responseContents, "/defaultCrumbIssuer/crumbRequestField");
+            crumb.Value = XmlNodeLoader.LoadValue(
+                responseContents, "/defaultCrumbIssuer/crumb");
+
+            return crumb;
+        }
+
         internal const string SUCESSFUL_BUILD_TAG = "SUCCESS";
         internal const string FINISHED_BUILD_TAG = "finished";
         const string QUEUED_BUILD_TAG = "queued";
@@ -249,15 +359,18 @@ namespace JenkinsPlug
         const string INPROGRESS_BUILD_TAG = "in_progress";
 
         const string GET_CRUMB_URI = "crumbIssuer/api/xml";
-        const string GET_JOB_CONFIG_URI = "job/{0}/config.xml";
+        const string GET_JOB_CONFIG_URI_FORMAT = "{0}/config.xml";
 
-        const string QUEUE_BUILD_URI_FORMAT = "job/{0}/buildWithParameters?{1}";
+        const string QUEUE_BUILD_URI_FORMAT = "{0}/buildWithParameters?{1}";
 
         const string GET_QUEUE_URI = "queue/api/xml";
 
-        const string QUERY_BUILD_URI_FORMAT = "job/{0}/{1}/api/xml";
-
         static readonly BuildStatus QueuedStatus = new BuildStatus()
             { Progress = QUEUED_BUILD_TAG, BuildResult = string.Empty };
+
+        const int MAX_GET_ASYNC_RETRIES_MONO_ISSUE_HACK = 5;
+        const int WAIT_MILLIS_GET_ASYNC_MONO_ISSUE_HACK = 500;
+
+        static readonly ILog mLog = LogManager.GetLogger("jenkinsplug");
     }
 }
